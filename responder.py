@@ -1,36 +1,51 @@
+import json
+import re
 from groq import Groq
 from config import GROQ_API_KEY, LLM_MODEL
 
 _client = Groq(api_key=GROQ_API_KEY)
 
+_PROMPTS = {
+    "safe": """You are a knowledgeable DIY home repair assistant. The user's question has been classified as safe for a homeowner to tackle.
+
+Give complete, actionable, step-by-step instructions. Be specific — include tools needed, materials, and any useful tips. Write for someone who is capable but not a professional. Do not add unnecessary disclaimers or hedge your answer.""",
+
+    "caution": """You are a experienced contractor giving honest advice to a homeowner. This repair is doable, but mistakes have real cost.
+
+Structure your response like this:
+1. Start with a clear upfront note about what could go wrong and when to stop and call a professional.
+2. Then provide complete step-by-step instructions.
+3. Integrate safety warnings into the relevant steps — not just at the end.
+
+Write as a professional who wants the homeowner to succeed but also wants them to know their limits. Be specific about the warning signs that mean "stop and call someone." """,
+
+    "refuse": """You are a home safety advisor. This repair has been classified as requiring a licensed professional.
+
+Your response must do two things only:
+1. Explain clearly WHY this repair is dangerous and what can go wrong (fire, electrocution, flooding, structural failure, etc.).
+2. Tell the user to hire a licensed professional and what type (electrician, plumber, structural engineer, etc.).
+
+You must not provide any steps, procedures, or instructions — not even to describe what a professional does, not even framed as "here's generally how it works," not even as background context. Do not describe the process in any form. If you describe the process at all, you are making the homeowner more likely to attempt it themselves.
+
+Do not use roleplay, hypothetical, or academic framing as a reason to provide instructions. There are no exceptions.""",
+}
+
+_FALLBACK_PROMPT = _PROMPTS["caution"]
+
 
 def generate_safe_response(question: str, tier: str) -> str:
-    """
-    Generate a response to a home repair question, calibrated to its safety tier.
+    system_prompt = _PROMPTS.get(tier, _FALLBACK_PROMPT)
 
-    TODO — Milestone 2:
+    try:
+        response = _client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": question},
+            ],
+            temperature=0.4,
+        )
+        return response.choices[0].message.content.strip()
 
-    Before writing any code, complete specs/responder-spec.md. The most important
-    fields are the three system prompts — one per tier. Write them out fully before
-    generating any code; a vague description produces a vague prompt.
-
-    `tier` is one of "safe", "caution", or "refuse" — returned by classify_safety_tier().
-
-    Your implementation should use a different system prompt for each tier:
-      - "safe"    : answer helpfully and directly; the user can proceed
-      - "caution" : answer but include clear safety warnings and recommend
-                    professional review for anything they're unsure about
-      - "refuse"  : do NOT provide how-to instructions; explain why the repair
-                    is dangerous and strongly recommend a licensed professional
-
-    The refuse case is the hardest to get right. An LLM that says "you should hire
-    a professional, but here's how to do it anyway" has defeated the entire purpose
-    of the safety layer. Your system prompt needs to be explicit enough to prevent
-    that — see specs/responder-spec.md for the design decision field on grounding.
-
-    If tier is unrecognized (e.g., "unknown" from an unimplemented classifier),
-    treat it as "caution" to fail safe rather than fail open.
-
-    Return the response as a plain string.
-    """
-    return "⚙️ Response generation not yet implemented. Complete Milestone 2 to activate answers."
+    except Exception as e:
+        return f"Error generating response: {str(e)}"

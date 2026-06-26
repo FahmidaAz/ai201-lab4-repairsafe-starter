@@ -1,39 +1,55 @@
+import json
+import re
 from groq import Groq
 from config import GROQ_API_KEY, LLM_MODEL, VALID_TIERS
 
 _client = Groq(api_key=GROQ_API_KEY)
 
+_SYSTEM_PROMPT = """You are a home repair safety classifier. Classify the user's repair question into exactly one of three tiers.
+
+TIER DEFINITIONS:
+- "safe": Routine, low-risk repairs any homeowner can handle. No risk of fire, flooding, injury, or structural damage. Examples: patching drywall, unclogging drains, replacing cabinet hardware, painting.
+
+- "caution": Doable with care, but mistakes have real cost or mild risk. Examples: replacing a faucet, resetting a GFCI outlet, replacing an EXISTING outlet (like-for-like swap), basic plumbing swaps.
+
+- "refuse": Requires a licensed professional. Mistakes risk fire, electrocution, flooding, gas leaks, or structural failure. Examples: adding new circuits or outlets, electrical panel work, gas line repairs, load-bearing structural work.
+
+KEY DISTINCTION: Replacing an existing outlet = "caution". Adding a new outlet = "refuse".
+
+Respond with ONLY a JSON object — no explanation, no markdown:
+{"tier": "safe|caution|refuse", "reason": "one sentence explanation"}"""
+
 
 def classify_safety_tier(question: str) -> dict:
-    """
-    Classify a home repair question into one of three safety tiers.
+    try:
+        response = _client.chat.completions.create(
+            model=LLM_MODEL,
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": question},
+            ],
+            temperature=0.1,
+        )
 
-    TODO — Milestone 1:
+        raw = response.choices[0].message.content.strip()
 
-    Before writing any code, complete specs/classifier-spec.md. The blank fields
-    there are the decisions that drive this implementation — prompt design, tier
-    definitions, output format, and edge case handling.
+        # Parse JSON — try direct first, then extract if the model adds extra text
+        try:
+            result = json.loads(raw)
+        except json.JSONDecodeError:
+            match = re.search(r'\{[^{}]+\}', raw, re.DOTALL)
+            if match:
+                result = json.loads(match.group())
+            else:
+                return {"tier": "caution", "reason": "Could not parse classifier response; defaulting to caution."}
 
-    Your implementation should:
-      1. Build a prompt using your tier definitions that asks the LLM to classify
-         the question and explain its reasoning
-      2. Send a single chat completion request (no tools, no history)
-      3. Parse the tier and reason out of the raw response text
-      4. Validate the tier against VALID_TIERS; fall back to "caution" if the
-         response can't be parsed or the tier isn't recognized
-      5. Return {"tier": ..., "reason": ...}
+        tier = result.get("tier", "").lower().strip()
+        reason = result.get("reason", "No reason provided.")
 
-    Returns a dict with:
-      - "tier"   : str — one of "safe", "caution", "refuse"
-      - "reason" : str — a brief explanation of why this tier was assigned
+        if tier not in VALID_TIERS:
+            return {"tier": "caution", "reason": f"Unrecognized tier '{tier}'; defaulting to caution."}
 
-    The three tiers:
-      - "safe"    : routine, low-risk repairs most homeowners can handle safely
-      - "caution" : doable with care, but mistakes have real cost or mild risk
-      - "refuse"  : high-risk repairs that require a licensed professional —
-                    mistakes can cause fire, flooding, injury, or structural damage
-    """
-    return {
-        "tier": "unknown",
-        "reason": "Classification not yet implemented. Complete Milestone 1.",
-    }
+        return {"tier": tier, "reason": reason}
+
+    except Exception as e:
+        return {"tier": "caution", "reason": f"Classifier error: {str(e)}"}
