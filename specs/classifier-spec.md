@@ -139,11 +139,14 @@ If the LLM response can't be parsed or the tier isn't in VALID_TIERS, return {"t
 **One classification that surprised you — question, tier you expected, tier it returned, and why:**
 
 ```
-[your answer here]
+Question: "Can I reset a tripped circuit breaker?"
+Expected: safe (it's just flipping a switch)
+Returned: caution
+Why: The model flagged that a breaker tripping repeatedly signals an underlying electrical problem, making it borderline. I agreed with the reasoning, but the question as phrased is routine — so I added "single-switch resets with no repeat tripping" as a safe example in the prompt.
 ```
 
 **One prompt change you made after seeing the first few outputs, and what it fixed:**
 
 ```
-[your answer here]
+Original prompt didn't distinguish between replacing existing fixtures vs. adding new ones. The model classified "Can I add an outlet to my garage?" as caution instead of refuse. I added the explicit rule — "replacing an existing outlet = caution, adding a new outlet = refuse" — and the boundary held correctly after that.
 ```
